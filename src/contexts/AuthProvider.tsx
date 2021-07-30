@@ -1,9 +1,11 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useState } from "react";
 import AuthContext from "./AuthContext";
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import config from "../../config";
+import useSecureStore from "../hooks/useSecureStore";
+import usePersistentState from "../hooks/usePersistentState";
 
 const redirectUri = AuthSession.makeRedirectUri({ useProxy: config.identityServerUseProxy });
 const openIdOptions = { ...config.identityServerOptions, redirectUri };
@@ -11,11 +13,13 @@ const openIdOptions = { ...config.identityServerOptions, redirectUri };
 WebBrowser.maybeCompleteAuthSession();
 
 export default function AuthProvider(props: any) {
-    const [token, setToken] = useState<AuthSession.TokenResponse>();
-    const [tokenState, setTokenState] = useState<string>();
-    const [userInfo, setUserInfo] = useState<Record<string, any>>();
+    const [token, setToken, clearToken] = useSecureStore<AuthSession.TokenResponse | undefined>(config.secureKeys.accessToken);
+    const [userInfo, setUserInfo, clearUserInfo] = usePersistentState<Record<string, any> | undefined>(config.secureKeys.userInfo);
     const discovery = AuthSession.useAutoDiscovery('https://demo.identityserver.io');
     const [request, result, promptAsync] = AuthSession.useAuthRequest(openIdOptions, discovery);
+
+    useEffect(() => console.log('==> request', request), [request]);
+    useEffect(() => console.log('==> result', result), [result]);
 
     /**
      * Porque assim que faz o login, ele retorna o `code`, que deve ser trocado 
@@ -23,12 +27,10 @@ export default function AuthProvider(props: any) {
      * o code pelo access code 
      */
     const _handleCodeExchange = (arg: AuthSession.AuthSessionResult) => {
-        if(arg.type === 'success')
-            setTokenState(arg.params.state);
         // verifico antes para não precisar tratar o arg abaixo (pq senão ele pode 
         // ficar como undefined) 
         if (arg.type === 'success') {
-            console.log('>>>> promptAsync success ', arg);
+            //console.log('>>>> promptAsync success ', arg);
             const code = arg.params.code;
             const param = {
                 code,
@@ -42,7 +44,7 @@ export default function AuthProvider(props: any) {
             if (discovery) {
                 AuthSession.exchangeCodeAsync(param, discovery)
                     .then(r2 => {
-                        console.log('>>>> exchange Success', r2);
+                        //console.log('>>>> exchange Success', r2);
                         setToken(r2);
                         _loadUserInfo(r2.accessToken);
                     })
@@ -77,7 +79,7 @@ export default function AuthProvider(props: any) {
      */
     const login = () => {
         if (discovery) {
-            request?.promptAsync(discovery, { useProxy: config.identityServerUseProxy })
+            promptAsync({ useProxy: config.identityServerUseProxy })
                 .then(_handleCodeExchange)
                 .catch(e => console.log('>>>> promptAsync Error: ', e))
         } else {
@@ -86,24 +88,13 @@ export default function AuthProvider(props: any) {
     }
 
     const logout = () => {
-        let state = token?.state;
+        console.log('=> logout', result, request)
 
         if (discovery && token) {
-            const url = `${discovery.endSessionEndpoint}?id_token_hint=${token.accessToken}&post_logout_redirect_uri=${redirectUri}&state=${state}`
-            WebBrowser.openAuthSessionAsync(`${discovery.endSessionEndpoint}?id_token_hint=${token.accessToken}` ?? '', redirectUri)
-                .then(r2 => {
-                    console.log('>>>> openAuthSessionAsync success', r2);
-                    setToken(undefined);
-                    setUserInfo(undefined);
-                })
-                .catch(e => console.log('>>>> openAuthSessionAsync error', e))
-            // AuthSession.revokeAsync({ token: token?.accessToken }, discovery)
-            //     .then(r => {
-            //         console.log('>>>> logoff success - ', r);
-            //         setToken(undefined);
-            //         setUserInfo(undefined);
-            //     })
-            //     .catch(e => console.log('>>>> promptAsync Error: ', e))
+            const url = `${discovery.endSessionEndpoint}?id_token_hint=${token.accessToken}`;
+            clearUserInfo();
+            clearToken();
+            request?.promptAsync(discovery, { url });
         } else {
             console.log('>>>> logout error - discovery or token are null');
         }

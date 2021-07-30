@@ -1,5 +1,9 @@
 const config = {
-    identityServerUrl: 'https://demo.identityserver.io',
+    secureKeys: {
+        accessToken: 'teste.accesstoken',
+        userInfo: 'teste.userinfo'
+    },
+    identityServerUrl: 'https://login.alienlab.com.br',
     identityServerOptions: {
         clientId: 'interactive.public',
         scopes: ['openid', 'profile', 'email', 'api', 'offline_access'],
